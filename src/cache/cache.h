@@ -45,13 +45,22 @@ class Cache {
 
 // 在这里使用分片方式来处理缓存
 template <typename KeyType, typename ValueType>
+// ShardCache是Cache的子类
 class ShardCache final : public Cache<KeyType, ValueType> {
  public:
   ShardCache() = default;
   ShardCache(uint32_t capacity) {
+    // 循环来初始化 cache_impl_ 数组中的每个元素
     for (int32_t index = 0; index < kShardNum; ++index) {
-      cache_impl_[index] =
-          std::make_shared<LruCachePolicy<KeyType, ValueType, MutexLock>>(capacity);
+      // std::make_shared : 创建动态分配的对象并返回一个指向该对象的共享指针
+      // 共享指针通过使用引用计数来跟踪对对象的引用次数。每当创建一个新的共享指针指向同一对象时，引用计数会增加。
+      // 当某个共享指针超出其作用域、被重置或显式释放时，引用计数会相应减少。
+      // 当引用计数为零时，即没有共享指针引用对象时，才会自动释放对象的内存。
+      // 共享指针提供了方便的语法和自动内存管理，可以帮助避免常见的内存泄漏和悬空指针问题。
+      // 它还支持自定义的删除器（deleter），允许在释放对象时执行特定的清理操作。
+
+      // 创建了一个共享指针指向一个 LruCachePolicy 类的实例
+      cache_impl_[index] = std::make_shared<LruCachePolicy<KeyType, ValueType, MutexLock>>(capacity);
     }
   }
   ~ShardCache() = default;
@@ -59,7 +68,9 @@ class ShardCache final : public Cache<KeyType, ValueType> {
       return "shard.cache";
   }
   void Insert(const KeyType& key, ValueType* value, uint32_t ttl = 0) {
+    // 寻址
     uint64_t shard_num = std::hash<KeyType>{}(key) % kShardNum;
+    // 调用 cache_impl_[shard_num] 指针所指向的对象的 Insert 方法，将给定的参数传递给该方法
     cache_impl_[shard_num]->Insert(key, value, ttl);
   }
   CacheNode<KeyType, ValueType>* Get(const KeyType& key) {
@@ -70,6 +81,7 @@ class ShardCache final : public Cache<KeyType, ValueType> {
     uint64_t shard_num = std::hash<KeyType>{}(node->key) % kShardNum;
     return cache_impl_[shard_num]->Release(node);
   }
+  // 对所有的分片进行回收
   void Prune() {
     for (int32_t index = 0; index < kShardNum; ++index) {
       cache_impl_[index]->Prune();
@@ -87,10 +99,10 @@ class ShardCache final : public Cache<KeyType, ValueType> {
   }
 
  private:
-  // 默认分为5个shard
+  // constexpr 表示编译器即赋值（优化项）
   static constexpr uint8_t kShardNum = 4;
-  // 采用impl的机制来进行实现
+  // 采用impl的机制来进行实现 一个List
   std::vector<std::shared_ptr<CachePolicy<KeyType, ValueType>>> cache_impl_;
 };
 
-}  // namespace corekv
+}  
