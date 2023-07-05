@@ -1,3 +1,4 @@
+// 预处理指令，用于在 C++ 中确保头文件只被编译一次
 #pragma once
 #include <functional>
 #include <list>
@@ -14,21 +15,26 @@
 namespace corekv {
 template <typename KeyType, typename ValueType, typename LockType = NullLock>
 class LruCachePolicy final : public CachePolicy<KeyType, ValueType> {
+  // typename 关键字用于告诉编译器 std::list<CacheNode<KeyType, ValueType>*>::iterator 是一个类型，而不是一个成员变量或成员函数
+  // using ListIter = 则是为这个迭代器类型定义了一个别名 ListIter
   using ListIter = typename std::list<CacheNode<KeyType, ValueType>*>::iterator;
 
  public:
   LruCachePolicy(uint32_t capacity) : capacity_(capacity) {}
   // 其实走到这里，说明整个程序都结束了
   ~LruCachePolicy() {
+    // auto表示自动推导变量的类型
     for (auto it = nodes_.begin(); it != nodes_.end(); it++) {
       // Unref(it);
     }
   }
+
   void Insert(const KeyType& key, ValueType* value, uint32_t ttl = 0) {
     LockType lock_type;
     ScopedLockImpl<LockType> lock_guard(lock_type);
     CacheNode<KeyType, ValueType>* new_node =
         new CacheNode<KeyType, ValueType>();
+    // 将 key 作为输入，通过 std::hash<KeyType> 的函数调用运算符生成哈希值，并将该哈希值赋值给 new_node 对象的 hash 成员变量
     new_node->hash = std::hash<KeyType>{}(key);
     new_node->key = key;
     new_node->value = value;
@@ -38,10 +44,8 @@ class LruCachePolicy final : public CachePolicy<KeyType, ValueType> {
     if (ttl > 0) {
       new_node->last_access_time = util::GetCurrentTime();
     }
-    typename std::unordered_map<
-        KeyType,
-        typename std::list<CacheNode<KeyType, ValueType>*>::iterator>::iterator
-        iter = index_.find(key);
+    typename std::unordered_map< KeyType, typename std::list<CacheNode<KeyType, ValueType>*>::iterator>
+        ::iterator iter = index_.find(key);
     //首先判断是否有相同的key在缓存中
     if (iter == index_.end()) {
       //淘汰最后一个，然后将其加到第一个位置
@@ -61,6 +65,7 @@ class LruCachePolicy final : public CachePolicy<KeyType, ValueType> {
       index_[key] = nodes_.begin();
     }
   }
+
   CacheNode<KeyType, ValueType>* Get(const KeyType& key) {
     LockType lock_type;
     ScopedLockImpl<LockType> lock_guard(lock_type);
